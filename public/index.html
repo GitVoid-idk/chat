@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat Anônimo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f1f5f9; display: flex;
+           align-items: center; justify-content: center; min-height: 100vh; }
+
+    /* Tela de entrada */
+    #tela-entrada {
+      background: white; border-radius: 12px; padding: 2rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 340px; text-align: center;
+    }
+    #tela-entrada h2 { margin-bottom: 0.5rem; color: #1e293b; }
+    #tela-entrada p { color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    #tela-entrada input {
+      width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1;
+      border-radius: 8px; font-size: 1rem; margin-bottom: 1rem; outline: none;
+    }
+    #tela-entrada input:focus { border-color: #4f46e5; }
+    #tela-entrada button {
+      width: 100%; padding: 10px; background: #4f46e5; color: white;
+      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+    }
+    #tela-entrada button:hover { background: #4338ca; }
+
+    /* Tela do chat */
+    #tela-chat { display: none; flex-direction: column; width: 100%; max-width: 640px;
+                 height: 100vh; padding: 1rem; }
+    #cabecalho {
+      background: white; border-radius: 10px; padding: 0.75rem 1rem;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0.75rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    #cabecalho span { font-weight: 600; color: #1e293b; }
+    #cabecalho small { color: #64748b; font-size: 0.8rem; }
+    #mensagens {
+      flex: 1; overflow-y: auto; background: white; border-radius: 10px;
+      padding: 1rem; margin-bottom: 0.75rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .msg { margin-bottom: 0.6rem; line-height: 1.5; }
+    .msg .autor { font-weight: 600; color: #4f46e5; margin-right: 6px; }
+    .msg .hora { font-size: 0.72rem; color: #94a3b8; margin-left: 4px; }
+    .msg.sistema { color: #94a3b8; font-style: italic; font-size: 0.85rem; }
+    .msg.proprio .autor { color: #16a34a; }
+    #form { display: flex; gap: 8px; }
+    #input {
+      flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1;
+      border-radius: 8px; font-size: 1rem; outline: none;
+      background: white;
+    }
+    #input:focus { border-color: #4f46e5; }
+    #form button {
+      padding: 10px 18px; background: #4f46e5; color: white;
+      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+    }
+    #form button:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+
+  <!-- Tela de entrada -->
+  <div id="tela-entrada">
+    <h2>💬 Chat Anônimo</h2>
+    <p>Escolha um nome para entrar no chat</p>
+    <input id="nome-input" type="text" placeholder="Seu nome..." maxlength="30" autofocus/>
+    <button onclick="entrar()">Entrar</button>
+  </div>
+
+  <!-- Tela do chat -->
+  <div id="tela-chat">
+    <div id="cabecalho">
+      <span id="label-apelido">...</span>
+      <small>histórico salvo</small>
+    </div>
+    <div id="mensagens"></div>
+    <form id="form" onsubmit="enviar(event)">
+      <input id="input" autocomplete="off" placeholder="Digite sua mensagem..." maxlength="300"/>
+      <button type="submit">Enviar</button>
+    </form>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let meuNome = "";
+
+    function entrar() {
+      const input = document.getElementById("nome-input");
+      const nome = input.value.trim();
+      if (!nome) return;
+      meuNome = nome;
+      document.getElementById("label-apelido").textContent = "Você: " + nome;
+      document.getElementById("tela-entrada").style.display = "none";
+      document.getElementById("tela-chat").style.display = "flex";
+      socket.emit("entrar", nome);
+    }
+
+    document.getElementById("nome-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") entrar();
+    });
+
+    function formatarHora(iso) {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function adicionarMensagem({ autor, texto, hora }, historico = false) {
+      const div = document.getElementById("mensagens");
+      const p = document.createElement("p");
+
+      if (autor === "Sistema") {
+        p.className = "msg sistema";
+        p.textContent = texto;
+      } else {
+        p.className = "msg" + (autor === meuNome ? " proprio" : "");
+        p.innerHTML = `<span class="autor">${autor}</span>${texto}<span class="hora">${formatarHora(hora)}</span>`;
+      }
+
+      div.appendChild(p);
+      if (!historico) div.scrollTop = div.scrollHeight;
+    }
+
+    socket.on("historico", (msgs) => {
+      const div = document.getElementById("mensagens");
+      div.innerHTML = "";
+      msgs.forEach(m => adicionarMensagem(m, true));
+      div.scrollTop = div.scrollHeight;
+    });
+
+    socket.on("mensagem", (msg) => {
+      adicionarMensagem(msg);
+    });
+
+    function enviar(e) {
+      e.preventDefault();
+      const input = document.getElementById("input");
+      if (input.value.trim()) {
+        socket.emit("mensagem", input.value);
+        input.value = "";
+      }
+    }
+  </script>
+</body>
+</html>
